@@ -83,7 +83,18 @@ public class SchemaProperty
     public string Description { get; set; } = string.Empty;
     
     [JsonPropertyName("enum")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string[]? Enum { get; set; }
+    
+    [JsonPropertyName("items")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SchemaItems? Items { get; set; }
+}
+
+public class SchemaItems
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = string.Empty;
 }
 
 public class ToolCallParams

@@ -62,7 +62,8 @@ class Program
                 logging.ClearProviders();
                 logging.AddConsole(options =>
                 {
-                    options.LogToStandardErrorThreshold = LogLevel.Warning;
+                    // Force all console logging to stderr for MCP compatibility
+                    options.LogToStandardErrorThreshold = LogLevel.Trace;
                 });
                 
                 // Set minimum log level from configuration

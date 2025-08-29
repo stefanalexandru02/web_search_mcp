@@ -23,7 +23,7 @@ public class McpServer
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
+            WriteIndented = false
         };
     }
 
@@ -159,7 +159,8 @@ public class McpServer
                         ["allowed_domains"] = new SchemaProperty
                         {
                             Type = "array",
-                            Description = "Optional array of domains to restrict search to (e.g., ['ftrack.com', 'github.com'])"
+                            Description = "Optional array of domains to restrict search to (e.g., ['ftrack.com', 'github.com'])",
+                            Items = new SchemaItems { Type = "string" }
                         },
                         ["max_results"] = new SchemaProperty
                         {
@@ -256,8 +257,18 @@ public class McpServer
         try
         {
             var query = arguments.TryGetValue("query", out var q) ? q?.ToString() ?? "" : "";
-            var maxResults = arguments.TryGetValue("max_results", out var mr) ? 
-                Convert.ToInt32(mr) : 10;
+            var maxResults = 10;
+            if (arguments.TryGetValue("max_results", out var mr) && mr != null)
+            {
+                if (mr is JsonElement jsonElement)
+                {
+                    maxResults = jsonElement.GetInt32();
+                }
+                else
+                {
+                    maxResults = Convert.ToInt32(mr);
+                }
+            }
 
             string[]? allowedDomains = null;
             if (arguments.TryGetValue("allowed_domains", out var ad) && ad != null)
