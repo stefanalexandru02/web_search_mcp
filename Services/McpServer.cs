@@ -181,31 +181,6 @@ public class McpServer
                     Properties = new Dictionary<string, SchemaProperty>(),
                     Required = Array.Empty<string>()
                 }
-            },
-            new Tool
-            {
-                Name = "search_ftrack_docs",
-                Description = "Specialized search for ftrack developer documentation and API resources",
-                InputSchema = new ToolInputSchema
-                {
-                    Type = "object",
-                    Properties = new Dictionary<string, SchemaProperty>
-                    {
-                        ["query"] = new SchemaProperty
-                        {
-                            Type = "string",
-                            Description = "The search query for ftrack documentation"
-                        },
-                        ["doc_type"] = new SchemaProperty
-                        {
-                            Type = "string",
-                            Description = "Type of documentation to search",
-                            Enum = new[] { "all", "api", "python-api", "rest-api", "javascript-api", "developer-guide" }
-                        }
-                    },
-                    Required = new[] { "query" }
-                }
-            }
         };
 
         var result = new ToolListResult { Tools = tools };
@@ -235,7 +210,6 @@ public class McpServer
             {
                 "web_search" => await HandleWebSearchAsync(callParams.Arguments, cancellationToken),
                 "get_allowed_domains" => HandleGetAllowedDomains(),
-                "search_ftrack_docs" => await HandleFtrackSearchAsync(callParams.Arguments, cancellationToken),
                 _ => CreateErrorToolResult($"Unknown tool: {callParams.Name}")
             };
 
@@ -334,66 +308,6 @@ public class McpServer
         };
     }
 
-    private async Task<ToolCallResult> HandleFtrackSearchAsync(Dictionary<string, object> arguments, CancellationToken cancellationToken)
-    {
-        try
-        {
-            var query = arguments.TryGetValue("query", out var q) ? q?.ToString() ?? "" : "";
-            var docType = arguments.TryGetValue("doc_type", out var dt) ? dt?.ToString() ?? "all" : "all";
-
-            if (string.IsNullOrWhiteSpace(query))
-            {
-                return CreateErrorToolResult("Query parameter is required");
-            }
-
-            // Create ftrack-specific search query
-            var ftrackQuery = CreateFtrackQuery(query, docType);
-            var ftrackDomains = new[] { "ftrack.com", "www.ftrack.com", "help.ftrack.com", "docs.ftrack.com", "developer.ftrack.com", "api.ftrack.com" };
-
-            var searchRequest = new SearchRequest
-            {
-                Query = ftrackQuery,
-                AllowedDomains = ftrackDomains,
-                MaxResults = 10
-            };
-
-            var results = await _searchService.SearchAsync(searchRequest, cancellationToken);
-            var formattedResults = FormatSearchResults(results, ftrackQuery, "ftrack developer documentation");
-
-            return new ToolCallResult
-            {
-                Content = new[]
-                {
-                    new ToolContent
-                    {
-                        Type = "text",
-                        Text = formattedResults
-                    }
-                },
-                IsError = false
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error in ftrack search");
-            return CreateErrorToolResult($"Ftrack search failed: {ex.Message}");
-        }
-    }
-
-    private string CreateFtrackQuery(string query, string docType)
-    {
-        var baseQuery = $"site:ftrack.com {query}";
-        
-        return docType switch
-        {
-            "api" => $"{baseQuery} (API OR python-api OR rest-api OR javascript-api)",
-            "python-api" => $"{baseQuery} python-api",
-            "rest-api" => $"{baseQuery} rest-api",
-            "javascript-api" => $"{baseQuery} javascript-api",
-            "developer-guide" => $"{baseQuery} (developer OR guide OR tutorial)",
-            _ => baseQuery
-        };
-    }
 
     private string FormatSearchResults(SearchResult[] results, string query, string? searchType = null)
     {

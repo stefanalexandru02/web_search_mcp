@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "websearch": {
-      "command": "dotnet",
-      "args": ["run", "--project", "/Users/stefanalexandru/Desktop/web_search_mcp"],
-      "env": {}
-    }
-  }
-}
