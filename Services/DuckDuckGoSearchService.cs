@@ -36,28 +36,27 @@ public class DuckDuckGoSearchService : ISearchService
         {
             _logger.LogInformation("Performing DuckDuckGo search for: {Query}", request.Query);
 
-            // Use DuckDuckGo Instant Answer API first, then fallback to HTML scraping
             var results = new List<SearchResult>();
             
-            // Try DuckDuckGo Instant Answer API (free, no key required)
-            var instantResults = await SearchInstantAnswerAsync(request.Query, cancellationToken);
-            results.AddRange(instantResults);
+            // Search with more results to allow for domain filtering
+            var searchLimit = request.MaxResults * 3; // Get more results for filtering
+            var htmlResults = await SearchHtmlAsync(request.Query, searchLimit, cancellationToken);
+            results.AddRange(htmlResults);
 
-            // If we need more results or got none, try HTML scraping approach
-            if (results.Count < request.MaxResults)
-            {
-                var htmlResults = await SearchHtmlAsync(request.Query, request.MaxResults - results.Count, cancellationToken);
-                results.AddRange(htmlResults);
-            }
+            _logger.LogInformation("Retrieved {Count} raw search results", results.Count);
 
             // Filter by allowed domains if specified
             var domainsToFilter = request.AllowedDomains ?? _allowedDomains;
             if (domainsToFilter.Any())
             {
+                var beforeCount = results.Count;
                 results = results.Where(r => IsAllowedDomain(r.Domain, domainsToFilter)).ToList();
+                _logger.LogInformation("After domain filtering: {Count} results (was {Before})", results.Count, beforeCount);
             }
 
-            return results.Take(request.MaxResults).ToArray();
+            var finalResults = results.Take(request.MaxResults).ToArray();
+            _logger.LogInformation("Returning {Count} search results", finalResults.Length);
+            return finalResults;
         }
         catch (Exception ex)
         {
@@ -110,27 +109,65 @@ public class DuckDuckGoSearchService : ISearchService
     {
         try
         {
-            // Create site-restricted query for allowed domains
-            var siteQuery = query;
-            if (_allowedDomains.Any())
-            {
-                var siteRestrictions = string.Join(" OR ", _allowedDomains.Select(d => $"site:{d}"));
-                siteQuery = $"{query} ({siteRestrictions})";
-            }
+            // Don't modify the query here - just search as-is
+            var encodedQuery = HttpUtility.UrlEncode(query);
+            var url = $"https://lite.duckduckgo.com/lite/?q={encodedQuery}";
 
-            var encodedQuery = HttpUtility.UrlEncode(siteQuery);
-            var url = $"https://duckduckgo.com/html/?q={encodedQuery}";
+            _logger.LogInformation("Searching DuckDuckGo for: {Query}", query);
 
             var response = await _httpClient.GetStringAsync(url, cancellationToken);
             
-            // Simple HTML parsing to extract search results
-            return ParseDuckDuckGoHtml(response, maxResults);
+            // Parse the simpler lite version HTML
+            return ParseDuckDuckGoLiteHtml(response, maxResults);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "DuckDuckGo HTML search failed for query: {Query}", query);
             return Array.Empty<SearchResult>();
         }
+    }
+
+    private SearchResult[] ParseDuckDuckGoLiteHtml(string html, int maxResults)
+    {
+        var results = new List<SearchResult>();
+        
+        try
+        {
+            // Parse DuckDuckGo Lite results - simpler structure
+            var resultPattern = @"<a rel=""nofollow"" href=""([^""]+)""[^>]*>([^<]+)</a>";
+            var snippetPattern = @"<td class=""result-snippet"">([^<]+)</td>";
+            
+            var linkMatches = System.Text.RegularExpressions.Regex.Matches(html, resultPattern);
+            var snippetMatches = System.Text.RegularExpressions.Regex.Matches(html, snippetPattern);
+
+            _logger.LogInformation("Found {LinkCount} links and {SnippetCount} snippets", linkMatches.Count, snippetMatches.Count);
+
+            for (int i = 0; i < Math.Min(linkMatches.Count, maxResults); i++)
+            {
+                var url = System.Web.HttpUtility.HtmlDecode(linkMatches[i].Groups[1].Value);
+                var title = System.Web.HttpUtility.HtmlDecode(linkMatches[i].Groups[2].Value);
+                
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                {
+                    var snippet = i < snippetMatches.Count ? 
+                        System.Web.HttpUtility.HtmlDecode(snippetMatches[i].Groups[1].Value) : "";
+
+                    results.Add(new SearchResult
+                    {
+                        Title = title,
+                        Url = url,
+                        Snippet = snippet,
+                        Domain = uri.Host
+                    });
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse DuckDuckGo Lite HTML response");
+        }
+
+        return results.ToArray();
     }
 
     private SearchResult[] ParseDuckDuckGoHtml(string html, int maxResults)

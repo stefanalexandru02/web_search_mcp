@@ -181,6 +181,7 @@ public class McpServer
                     Properties = new Dictionary<string, SchemaProperty>(),
                     Required = Array.Empty<string>()
                 }
+            }
         };
 
         var result = new ToolListResult { Tools = tools };
